@@ -1,0 +1,241 @@
+<HTML>
+<HEAD>
+
+<style type="text/css">
+  #map{
+    height: 633px;
+    width: 1160px;
+  }
+
+</style>
+
+</HEAD>
+
+
+
+<BODY>
+
+
+
+<div id='map'></div>
+<div ><input id='slider' type="range" name="points" min="1" max="5"  onchange="showVal(this.value)"></div>
+
+<!-- <script src='https://api.tiles.mapbox.com/mapbox.js/plugins/leaflet-draw/v0.2.2/leaflet.draw.js'></script> -->
+<link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.7.3/leaflet.css"/>
+  <script src="http://cdn.leafletjs.com/leaflet-0.7.3/leaflet.js"></script>
+<!--   //<script type="text/javascript" src="http://code.jquery.com/jquery-1.9.1.js"></script>` -->
+  <!-- <script src="http://rawgit.com/dwilhelm89/LeafletSlider/master/dist/leaflet.SliderControl.min.js"></script> -->
+ <!--  <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.4/themes/smoothness/jquery-ui.css" type="text/css"> -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js" type="text/javascript"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js"></script> -->
+<script src="https://api.tiles.mapbox.com/mapbox.js/plugins/turf/v3.0.11/turf.min.js"></script>
+<script src='https://api.mapbox.com/mapbox.js/v2.4.0/mapbox.js'></script>
+<link href='https://api.mapbox.com/mapbox.js/v2.4.0/mapbox.css' rel='stylesheet' />
+<!-- <script src='https://api.mapbox.com/mapbox.js/plugins/turf/v2.0.2/turf.min.js'></script> -->
+
+<!-- <link rel="stylesheet" href="//code.jquery.com/ui/1.12.0/themes/base/jquery-ui.css">
+<link rel="stylesheet" href="/resources/demos/style.css"> -->
+<!--   <script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+  //<script src="https://code.jquery.com/ui/1.12.0/jquery-ui.js"></script> -->
+ 
+  
+<!-- <script src='https://rawgit.com/Turfjs/turf/master/turf.min.js'></script> -->
+
+<script src="wards.geojson"></script>
+<script src="HospitalsandDiagnosticCentres.geojson"></script>
+<script src="customerdata.geojson"></script>
+
+<script>
+
+var slide = 1;
+
+L.mapbox.accessToken = 'pk.eyJ1IjoicmFqYW4xMjMiLCJhIjoiVXl2bmRnQSJ9._FYJ524aweE6H3xYzvoWbw'
+
+
+
+
+
+fc.features.forEach(function(pt){
+    pt.properties = {
+        "fill": "#add8e6",
+        "stroke": "#000000",
+        "stroke-width": 3,
+        fillOpacity:0.2
+    };
+});
+
+
+
+fc1.features.forEach(function(pt){
+    pt.properties = {
+        "marker-color": "#6BC65F",
+        "marker-size": "small"
+    };
+});
+
+fc2.features.forEach(function(pt){
+    pt.properties = {
+        "marker-color": "#6DE23F",
+        "marker-size": "small"
+    };
+});
+ var map = L.mapbox.map('map', 'mapbox.light')
+    .setView([ 13,77.5], 10);
+    map.scrollWheelZoom.enable();
+
+
+
+//Slider
+function showVal(Str){
+  slide = Str;
+calculateBuffer();
+calculateIntersect();
+}
+
+
+var fcLayer = L.mapbox.featureLayer().setGeoJSON(fc);
+var fc1Layer = L.mapbox.featureLayer().setGeoJSON(fc1);
+var fc2Layer = L.mapbox.featureLayer().setGeoJSON(fc2);
+
+var bufferLayer = L.mapbox.featureLayer().addTo(map);
+var intersectLayer=L.mapbox.featureLayer().addTo(map);
+var nearest=L.mapbox.featureLayer().addTo(map);
+
+fc1Layer.eachLayer(function(layer) {
+    // //pts
+    // layer.options.draggable == true;
+    // layer.on('drag', function(e) {
+    //     calculateBuffer();
+    // });
+    //lines and polys
+    if(layer.editing){
+        layer.editing.enable();
+        layer.on('edit', function(e) {
+            calculateBuffer();
+        });
+    }
+});
+
+
+fc1Layer.addTo(map);
+fcLayer.addTo(map);
+fc2Layer.addTo(map);
+calculateBuffer();
+calculateIntersect();
+//nearest();
+
+//convert to polygon and union
+function UnionWholeFC(fc){
+    var result; //empty polygon
+    if (fc["type"]==="FeatureCollection"){
+      //loop over the features
+      for (var i = fc['features'].length - 1; i >= 0; i--) {
+        var feature=fc['features'][i];
+        //now check if it is polygon
+        if ((feature["geometry"]["type"]=="Polygon")||(feature["geometry"]["type"]=="MultiPolygon")){
+          //now we can convert
+          var poly=getPolygonFeature(feature);
+          if(result){
+            //add
+            result=turf.union(result, poly);
+          }else{
+            //this is the fist polygon
+            result=poly;
+          }
+          
+        }
+      };
+    }
+    return result;
+  }
+
+  function getPolygonFeature(feature){
+  if (feature["geometry"]["type"]=="Polygon"){
+    return feature;
+  }else if (feature["geometry"]["type"]=="MultiPolygon"){
+    var poly;
+    var rings=feature["geometry"]["coordinates"];
+      //now iterate over the  rings
+      for (var i = rings.length - 1; i >= 0; i--) {
+        var ring=rings[i];
+        var ringPoly=turf.polygon(ring);
+        //each ring is a polygon
+        if(poly){
+          //exists, hence just union
+          poly=turf.union(poly, ringPoly);
+        }else{
+          //first ring
+          poly=ringPoly;
+        }
+      };
+      return poly;
+    }
+  }
+
+ 
+// Buffer and intersect function//
+var buffer;
+function calculateBuffer() {
+    var fc1 = turf.featureCollection(fc1Layer.getLayers().map(function(f){
+            return f.toGeoJSON()
+        }));
+
+    buffer = turf.buffer(fc1, slide, 'kilometers');
+    buffer.properties = {
+        "fill": "#6BC67F",
+        "stroke": "#25561F",
+        "stroke-width": 2,
+        fillOpacity:0.2
+    };
+    bufferLayer.setGeoJSON(buffer);
+
+
+//var intersectingArea=turf.area(polygon);
+
+
+}
+
+function calculateIntersect(){
+
+  var fc = turf.featureCollection(fcLayer.getLayers().map(function(f){
+            return f.toGeoJSON()
+        }));
+  var result=UnionWholeFC(buffer);
+  var wards=UnionWholeFC(fc);
+   var polygon = turf.intersect(result,wards);
+polygon.properties = {
+    "fill": "#25561F",
+    "stroke": "#25561F",
+    "stroke-width": 10,
+     fillOpacity:0.9
+};
+intersectLayer.setGeoJSON(polygon);
+
+var intersectingArea=turf.area(polygon);
+var wardArea=turf.area(wards)
+
+console.log("Percentage Area: "+ (intersectingArea/wardArea)*100)
+console.log("WardArea:"+wardArea)
+}
+
+
+// function nearest(){
+//   var fc2 = turf.featureCollection(fc2Layer.getLayers().map(function(f){
+//             return f.toGeoJSON()
+//         }));
+//  var fc1 = turf.featureCollection(fc1Layer.getLayers().map(function(f){
+//             return f.toGeoJSON()
+//         }));
+
+// var nearest = turf.nearest(fc1,fc2)
+// nearest.properties["marker-color"] = "#25561F";
+// nearest.properties["title"] = "Nearest Point";
+// nearest.properties["marker-size"] = "large";
+// nearest.properties["marker-symbol"] = "star-stroked";
+// nearest.setGeoJSON(nearest);
+// var nearest_fc = turf.featurecollection([fc1, nearest]);
+// L.mapbox.featureLayer().setGeoJSON(nearest_fc).addTo(map);
+
+// }
+</script>
+
